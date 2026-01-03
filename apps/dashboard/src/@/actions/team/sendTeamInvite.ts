@@ -38,8 +38,10 @@ export async function sendTeamInvites(options: {
     };
   }
 
+  const safeTeamId = encodeURIComponent(options.teamId);
+
   const results = await Promise.allSettled(
-    options.invites.map((invite) => sendInvite(options.teamId, invite, token)),
+    options.invites.map((invite) => sendInvite(safeTeamId, invite, token)),
   );
 
   return {
@@ -49,12 +51,12 @@ export async function sendTeamInvites(options: {
 }
 
 async function sendInvite(
-  teamId: string,
+  safeTeamId: string,
   invite: { email: string; role: "OWNER" | "MEMBER" },
   token: string,
 ) {
   const res = await fetch(
-    `${NEXT_PUBLIC_THIRDWEB_API_HOST}/v1/teams/${teamId}/invites`,
+    `${NEXT_PUBLIC_THIRDWEB_API_HOST}/v1/teams/${safeTeamId}/invites`,
     {
       body: JSON.stringify({
         inviteEmail: invite.email,
