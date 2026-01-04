@@ -51,13 +51,15 @@ export function buildCheckoutIframeUrl(
   }
 
   // Payment methods
+  // Payment methods
   if (
     options.payOptions.paymentMethods &&
-    options.payOptions.paymentMethods.length === 1
+    // There are 2 total payment methods. Default is both, so only set param if a subset is chosen.
+    options.payOptions.paymentMethods.length < 2
   ) {
     url.searchParams.set(
       "paymentMethods",
-      options.payOptions.paymentMethods[0],
+      options.payOptions.paymentMethods.join(","),
     );
   }
 
