@@ -20,13 +20,13 @@ describe("sendEip712Transaction", () => {
     const transaction = prepareTransaction({
       chain: zkSyncSepolia, // TODO make zksync fork chain work
       client: TEST_CLIENT,
-      value: 0n,
-      to: TEST_ACCOUNT_B.address,
       eip712: {
         paymaster: "0xbA226d47Cbb2731CBAA67C916c57d68484AA269F",
         paymasterInput:
           "0x8c5a344500000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
       },
+      to: TEST_ACCOUNT_B.address,
+      value: 0n,
     });
     const res = await sendEip712Transaction({
       account: TEST_ACCOUNT_A,
@@ -37,25 +37,129 @@ describe("sendEip712Transaction", () => {
 
   it.skip("should deploy a published autofactory contract on zksync", async () => {
     const address = await deployPublishedContract({
-      client: TEST_CLIENT,
-      chain: zkSyncSepolia, // TODO make zksync fork chain work
       account: TEST_ACCOUNT_A,
+      chain: zkSyncSepolia, // TODO make zksync fork chain work
+      client: TEST_CLIENT,
       contractId: "DropERC721",
       contractParams: {
-        defaultAdmin: TEST_ACCOUNT_A.address, // defaultAdmin
-        name: "test", // name
-        symbol: "test", // symbol
-        contractURI: "", // contractURI
-        trustedForwarders: [], // trustedForwarders
-        saleRecipient: TEST_ACCOUNT_A.address, // saleRecipient
+        contractURI: "", // defaultAdmin
+        defaultAdmin: TEST_ACCOUNT_A.address, // name
+        name: "test", // symbol
+        platformFeeBps: 0n, // contractURI
+        platformFeeRecipient: TEST_ACCOUNT_A.address, // trustedForwarders
+        royaltyBps: 0n, // saleRecipient
         royaltyRecipient: TEST_ACCOUNT_A.address, // royaltyRecipient
-        royaltyBps: 0n, // royaltyBps
-        platformFeeBps: 0n, // platformFeeBps
-        platformFeeRecipient: TEST_ACCOUNT_A.address, // platformFeeRecipient
+        saleRecipient: TEST_ACCOUNT_A.address, // royaltyBps
+        symbol: "test", // platformFeeBps
+        trustedForwarders: [], // platformFeeRecipient
       },
     });
     expect(address).toBeDefined();
     expect(address.length).toBe(42);
+  });
+
+  it("should formatTransaction", async () => {
+    const transaction = prepareTransaction({
+      chain: zkSyncSepolia, // TODO make zksync fork chain work
+      client: TEST_CLIENT,
+      value: 0n,
+      to: TEST_ACCOUNT_B.address,
+      eip712: {
+        paymaster: "0xbA226d47Cbb2731CBAA67C916c57d68484AA269F",
+        paymasterInput:
+          "0x8c5a344500000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+      },
+    });
+    const formatted = await formatTransaction({ transaction });
+    expect(formatted).toStrictEqual({
+      from: undefined,
+      to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      data: "0x",
+      value: 0n,
+      gasPerPubdata: undefined,
+      eip712Meta: {
+        paymaster: "0xbA226d47Cbb2731CBAA67C916c57d68484AA269F",
+        paymasterInput:
+          "0x8c5a344500000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+        gasPerPubdata: 50000n,
+        factoryDeps: undefined,
+      },
+      type: "0x71",
+    });
+  });
+
+  it("should getZkGasFees", async () => {
+    const transaction = prepareTransaction({
+      chain: zkSyncSepolia, // TODO make zksync fork chain work
+      client: TEST_CLIENT,
+      value: 0n,
+      to: TEST_ACCOUNT_B.address,
+      eip712: {
+        paymaster: "0xbA226d47Cbb2731CBAA67C916c57d68484AA269F",
+        paymasterInput:
+          "0x8c5a344500000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+      },
+    });
+    const data = await getZkGasFees({
+      transaction,
+      from: TEST_ACCOUNT_A.address as Hex,
+    });
+    expect(typeof data.gas).toBe("bigint");
+    expect(typeof data.maxFeePerGas).toBe("bigint");
+    expect(typeof data.maxPriorityFeePerGas).toBe("bigint");
+    expect(typeof data.gasPerPubdata).toBe("bigint");
+  });
+
+  it("should formatTransaction", async () => {
+    const transaction = prepareTransaction({
+      chain: zkSyncSepolia, // TODO make zksync fork chain work
+      client: TEST_CLIENT,
+      value: 0n,
+      to: TEST_ACCOUNT_B.address,
+      eip712: {
+        paymaster: "0xbA226d47Cbb2731CBAA67C916c57d68484AA269F",
+        paymasterInput:
+          "0x8c5a344500000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+      },
+    });
+    const formatted = await formatTransaction({ transaction });
+    expect(formatted).toStrictEqual({
+      from: undefined,
+      to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      data: "0x",
+      value: 0n,
+      gasPerPubdata: undefined,
+      eip712Meta: {
+        paymaster: "0xbA226d47Cbb2731CBAA67C916c57d68484AA269F",
+        paymasterInput:
+          "0x8c5a344500000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+        gasPerPubdata: 50000n,
+        factoryDeps: undefined,
+      },
+      type: "0x71",
+    });
+  });
+
+  it("should getZkGasFees", async () => {
+    const transaction = prepareTransaction({
+      chain: zkSyncSepolia, // TODO make zksync fork chain work
+      client: TEST_CLIENT,
+      value: 0n,
+      to: TEST_ACCOUNT_B.address,
+      eip712: {
+        paymaster: "0xbA226d47Cbb2731CBAA67C916c57d68484AA269F",
+        paymasterInput:
+          "0x8c5a344500000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000",
+      },
+    });
+    const data = await getZkGasFees({
+      transaction,
+      from: TEST_ACCOUNT_A.address as Hex,
+    });
+    expect(typeof data.gas).toBe("bigint");
+    expect(typeof data.maxFeePerGas).toBe("bigint");
+    expect(typeof data.maxPriorityFeePerGas).toBe("bigint");
+    expect(typeof data.gasPerPubdata).toBe("bigint");
   });
 
   it("should formatTransaction", async () => {

@@ -1,10 +1,9 @@
 import { ScrollShadow } from "@/components/ui/ScrollShadow/ScrollShadow";
 import { Spinner } from "@/components/ui/Spinner/Spinner";
-import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Account as TWAccount } from "@3rdweb-sdk/react/hooks/useApi";
 import { useMutation } from "@tanstack/react-query";
+import { MarkdownRenderer } from "components/contract-components/published-contract/markdown-renderer";
 import {
   AlertCircleIcon,
   CheckIcon,
@@ -15,22 +14,28 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ThirdwebClient } from "thirdweb";
-import { MarkdownRenderer } from "../../../../components/contract-components/published-contract/markdown-renderer";
+import type { NebulaSwapData } from "../api/chat";
 import { submitFeedback } from "../api/feedback";
 import { NebulaIcon } from "../icons/NebulaIcon";
 import { ExecuteTransactionCard } from "./ExecuteTransactionCard";
+import { Reasoning } from "./Reasoning/Reasoning";
+import { ApproveTransactionCard, SwapTransactionCard } from "./Swap/SwapCards";
 
 export type NebulaTxData = {
   chainId: number;
   data: `0x${string}`;
   to: string;
-  value: string;
+  value?: string;
 };
 
 export type ChatMessage =
   | {
       text: string;
-      type: "user" | "error" | "presence";
+      type: "user" | "error";
+    }
+  | {
+      texts: string[];
+      type: "presence";
     }
   | {
       // assistant type message loaded from history doesn't have request_id
@@ -39,8 +44,14 @@ export type ChatMessage =
       type: "assistant";
     }
   | {
-      type: "send_transaction";
-      data: NebulaTxData | null;
+      type: "action";
+      subtype: "sign_transaction";
+      data: NebulaTxData;
+    }
+  | {
+      type: "action";
+      subtype: "sign_swap";
+      data: NebulaSwapData;
     };
 
 export function Chats(props: {
@@ -49,10 +60,11 @@ export function Chats(props: {
   authToken: string;
   sessionId: string | undefined;
   className?: string;
-  twAccount: TWAccount;
   client: ThirdwebClient;
   setEnableAutoScroll: (enable: boolean) => void;
   enableAutoScroll: boolean;
+  useSmallText?: boolean;
+  sendMessage: (message: string) => void;
 }) {
   const { messages, setEnableAutoScroll, enableAutoScroll } = props;
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
@@ -99,7 +111,7 @@ export function Chats(props: {
     >
       <ScrollShadow
         className="flex-1"
-        scrollableClassName="max-h-full"
+        scrollableClassName="max-h-full overscroll-contain"
         shadowColor="hsl(var(--background))"
         shadowClassName="z-[1]"
       >
@@ -110,24 +122,20 @@ export function Chats(props: {
                 props.isChatStreaming && index === props.messages.length - 1;
               return (
                 <div
-                  className="fade-in-0 min-w-0 animate-in pt-1 text-sm duration-300 lg:text-base"
+                  className={cn(
+                    "fade-in-0 min-w-0 animate-in pt-1 text-sm duration-300 lg:text-base",
+                    props.useSmallText && "lg:text-sm",
+                  )}
                   // biome-ignore lint/suspicious/noArrayIndexKey: index is the unique key
                   key={index}
                 >
                   {message.type === "user" ? (
                     <div className="mt-6 flex justify-end">
                       <div className="max-w-[80%] overflow-auto rounded-xl border bg-card px-4 py-2">
-                        <MarkdownRenderer
-                          skipHtml
-                          markdownText={message.text}
-                          code={{
-                            ignoreFormattingErrors: true,
-                            className: "bg-transparent",
-                          }}
-                          className="text-foreground [&>*:last-child]:mb-0"
-                          p={{ className: "text-foreground leading-normal" }}
-                          li={{ className: "text-foreground" }}
-                          inlineCode={{ className: "border-none" }}
+                        <StyledMarkdownRenderer
+                          text={message.text}
+                          isMessagePending={isMessagePending}
+                          type="user"
                         />
                       </div>
                     </div>
@@ -144,7 +152,7 @@ export function Chats(props: {
                           )}
                         >
                           {message.type === "presence" && (
-                            <Spinner className="size-4" />
+                            <NebulaIcon className="size-5 text-muted-foreground" />
                           )}
 
                           {message.type === "assistant" && (
@@ -160,35 +168,12 @@ export function Chats(props: {
                       {/* Right Message */}
                       <div className="min-w-0 grow">
                         <ScrollShadow className="rounded-lg">
-                          {message.type === "assistant" ? (
-                            <MarkdownRenderer
-                              skipHtml
-                              markdownText={message.text}
-                              code={{
-                                disableCodeHighlight: isMessagePending,
-                                ignoreFormattingErrors: true,
-                              }}
-                              className="text-foreground [&>*:last-child]:mb-0"
-                              p={{
-                                className: "text-foreground",
-                              }}
-                              li={{ className: "text-foreground" }}
-                            />
-                          ) : message.type === "error" ? (
-                            <div className="rounded-xl border bg-card px-4 py-2 text-destructive-text leading-normal">
-                              {message.text}
-                            </div>
-                          ) : message.type === "send_transaction" ? (
-                            <ExecuteTransactionCardWithFallback
-                              txData={message.data}
-                              twAccount={props.twAccount}
-                              client={props.client}
-                            />
-                          ) : (
-                            <span className="leading-loose">
-                              {message.text}
-                            </span>
-                          )}
+                          <RenderMessage
+                            message={message}
+                            isMessagePending={isMessagePending}
+                            client={props.client}
+                            sendMessage={props.sendMessage}
+                          />
                         </ScrollShadow>
 
                         {message.type === "assistant" &&
@@ -217,27 +202,75 @@ export function Chats(props: {
   );
 }
 
-function ExecuteTransactionCardWithFallback(props: {
-  txData: NebulaTxData | null;
-  twAccount: TWAccount;
+function RenderMessage(props: {
+  message: ChatMessage;
+  isMessagePending: boolean;
   client: ThirdwebClient;
+  sendMessage: (message: string) => void;
 }) {
-  if (!props.txData) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircleIcon className="size-5" />
-        <AlertTitle>Failed to parse transaction data</AlertTitle>
-      </Alert>
-    );
+  const { message, isMessagePending, client, sendMessage } = props;
+
+  switch (message.type) {
+    case "assistant":
+      return (
+        <StyledMarkdownRenderer
+          text={message.text}
+          isMessagePending={isMessagePending}
+          type="assistant"
+        />
+      );
+
+    case "presence":
+      return <Reasoning isPending={isMessagePending} texts={message.texts} />;
+
+    case "error":
+      return (
+        <div className="rounded-xl border bg-card px-4 py-2 text-destructive-text leading-normal">
+          {message.text}
+        </div>
+      );
+
+    case "action": {
+      if (message.subtype === "sign_transaction") {
+        return (
+          <ExecuteTransactionCard
+            txData={message.data}
+            client={client}
+            onTxSettled={(txHash) => {
+              sendMessage(getTransactionSettledPrompt(txHash));
+            }}
+          />
+        );
+      }
+
+      if (message.subtype === "sign_swap") {
+        if (message.data.action === "approval") {
+          return (
+            <ApproveTransactionCard swapData={message.data} client={client} />
+          );
+        }
+
+        return (
+          <SwapTransactionCard
+            swapData={message.data}
+            client={client}
+            onTxSettled={() => {
+              // no op
+            }}
+          />
+        );
+      }
+    }
   }
 
-  return (
-    <ExecuteTransactionCard
-      txData={props.txData}
-      twAccount={props.twAccount}
-      client={props.client}
-    />
-  );
+  return null;
+}
+
+function getTransactionSettledPrompt(txHash: string) {
+  return `\
+I've executed the following transaction successfully with hash: ${txHash}.
+
+If our conversation calls for it, continue on to the next transaction or suggest next steps`;
 }
 
 function MessageActions(props: {
@@ -269,10 +302,14 @@ function MessageActions(props: {
   const sendBadRating = useMutation({
     mutationFn: () => sendRating("bad"),
     onSuccess() {
-      toast.info("Thanks for the feedback!");
+      toast.info("Thanks for the feedback!", {
+        position: "top-right",
+      });
     },
     onError() {
-      toast.error("Failed to send feedback");
+      toast.error("Failed to send feedback", {
+        position: "top-right",
+      });
     },
   });
 
@@ -330,5 +367,31 @@ function MessageActions(props: {
         )}
       </Button>
     </div>
+  );
+}
+
+function StyledMarkdownRenderer(props: {
+  text: string;
+  isMessagePending: boolean;
+  type: "assistant" | "user";
+}) {
+  return (
+    <MarkdownRenderer
+      skipHtml
+      markdownText={props.text}
+      className="text-foreground [&>*:first-child]:mt-0 [&>*:first-child]:border-none [&>*:first-child]:pb-0 [&>*:last-child]:mb-0"
+      code={{
+        ignoreFormattingErrors: true,
+        className: "bg-transparent",
+      }}
+      p={{
+        className:
+          props.type === "assistant"
+            ? "text-foreground"
+            : "text-foreground leading-normal",
+      }}
+      li={{ className: "text-foreground" }}
+      inlineCode={{ className: "border-none" }}
+    />
   );
 }
