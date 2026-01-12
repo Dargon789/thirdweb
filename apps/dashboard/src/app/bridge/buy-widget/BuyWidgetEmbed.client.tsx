@@ -1,83 +1,82 @@
 "use client";
 
 import { useMemo } from "react";
-import type { Address } from "thirdweb";
-import { defineChain } from "thirdweb";
-import { CheckoutWidget, type SupportedFiatCurrency } from "thirdweb/react";
-import { NEXT_PUBLIC_CHECKOUT_IFRAME_CLIENT_ID } from "@/constants/public-envs";
+import { type Address, defineChain } from "thirdweb";
+import { BuyWidget, type SupportedFiatCurrency } from "thirdweb/react";
+import { NEXT_PUBLIC_BUY_IFRAME_CLIENT_ID } from "@/constants/public-envs";
 import { getConfiguredThirdwebClient } from "@/constants/thirdweb.server";
 
-export function CheckoutWidgetEmbed({
+export function BuyWidgetEmbed({
   chainId,
-  amount,
-  seller,
   tokenAddress,
-  name,
-  description,
-  image,
-  buttonLabel,
-  feePayer,
-  country,
+  amount,
   showThirdwebBranding,
   theme,
   currency,
+  title,
+  description,
+  image,
   paymentMethods,
+  buttonLabel,
+  receiverAddress,
+  country,
 }: {
-  chainId: number;
-  amount: string;
-  seller: Address;
+  chainId?: number;
   tokenAddress?: Address;
-  name?: string;
-  description?: string;
-  image?: string;
-  buttonLabel?: string;
-  feePayer?: "user" | "seller";
-  country?: string;
+  amount?: string;
   showThirdwebBranding?: boolean;
   theme: "light" | "dark";
   currency?: SupportedFiatCurrency;
+  title?: string;
+  description?: string;
+  image?: string;
   paymentMethods?: ("crypto" | "card")[];
+  buttonLabel?: string;
+  receiverAddress?: Address;
+  country?: string;
 }) {
   const client = useMemo(
     () =>
       getConfiguredThirdwebClient({
-        clientId: NEXT_PUBLIC_CHECKOUT_IFRAME_CLIENT_ID,
+        clientId: NEXT_PUBLIC_BUY_IFRAME_CLIENT_ID,
         secretKey: undefined,
         teamId: undefined,
       }),
     [],
   );
 
-  // eslint-disable-next-line no-restricted-syntax
-  const chain = useMemo(() => defineChain(chainId), [chainId]);
+  const chain = useMemo(() => {
+    if (!chainId) return undefined;
+    // eslint-disable-next-line no-restricted-syntax
+    return defineChain(chainId);
+  }, [chainId]);
 
   return (
-    <CheckoutWidget
+    <BuyWidget
       className="shadow-xl"
       client={client}
       chain={chain}
-      amount={amount}
-      seller={seller}
       tokenAddress={tokenAddress}
-      name={name}
-      description={description}
-      image={image}
-      buttonLabel={buttonLabel}
-      feePayer={feePayer}
-      country={country}
+      amount={amount}
       showThirdwebBranding={showThirdwebBranding}
       theme={theme}
       currency={currency}
+      title={title}
+      description={description}
+      image={image}
       paymentMethods={paymentMethods}
+      buttonLabel={buttonLabel}
+      receiverAddress={receiverAddress}
+      country={country}
       onSuccess={() => {
         sendMessageToParent({
-          source: "checkout-widget",
+          source: "buy-widget",
           type: "success",
         });
       }}
       onError={(error) => {
         sendMessageToParent({
-          source: "checkout-widget",
+          source: "buy-widget",
           type: "error",
           message: error.message,
         });
