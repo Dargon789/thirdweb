@@ -7,7 +7,7 @@ import { getTeams } from "@/api/team/get-team";
 export async function GET(request: Request) {
   const authToken = await getAuthToken();
   if (!authToken) {
-    return NextResponse.redirect(new URL("/account/rewind", request.url));
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
