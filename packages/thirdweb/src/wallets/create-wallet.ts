@@ -2,21 +2,26 @@ import { trackConnect } from "../analytics/track/connect.js";
 import type { Chain } from "../chains/types.js";
 import { getCachedChainIfExists } from "../chains/utils.js";
 import { webLocalStorage } from "../utils/storage/webStorage.js";
+import { formatWalletConnectUrl } from "../utils/url.js";
 import { isMobile } from "../utils/web/isMobile.js";
 import { openWindow } from "../utils/web/openWindow.js";
+import { getWalletInfo } from "./__generated__/getWalletInfo.js";
 import type {
   InjectedSupportedWalletIds,
   WCSupportedWalletIds,
 } from "./__generated__/wallet-ids.js";
+import { baseAccountWalletSDK } from "./base-account/base-account-wallet.js";
+import { getBaseAccountWebProvider } from "./base-account/base-account-web.js";
 import { coinbaseWalletSDK } from "./coinbase/coinbase-wallet.js";
 import { getCoinbaseWebProvider } from "./coinbase/coinbase-web.js";
-import { COINBASE } from "./constants.js";
+import { BASE_ACCOUNT, COINBASE } from "./constants.js";
 import { isEcosystemWallet } from "./ecosystem/is-ecosystem-wallet.js";
 import { ecosystemWallet } from "./in-app/web/ecosystem.js";
 import { inAppWallet } from "./in-app/web/in-app.js";
 import { getInjectedProvider } from "./injected/index.js";
 import type { Account, Wallet } from "./interfaces/wallet.js";
 import { smartWallet } from "./smart/smart-wallet.js";
+import type { QROverlay } from "./wallet-connect/qr-overlay.js";
 import type { WCConnectOptions } from "./wallet-connect/types.js";
 import { createWalletEmitter } from "./wallet-emitter.js";
 import type {
@@ -115,6 +120,30 @@ import type {
  *
  * [View Coinbase wallet creation options](https://portal.thirdweb.com/references/typescript/v5/CoinbaseWalletCreationOptions)
  *
+ * ## Connecting with Base Account SDK
+ *
+ * ```ts
+ * import { createWallet } from "thirdweb/wallets";
+ * import { base, baseSepolia } from "thirdweb/chains";
+ *
+ * // For mainnet
+ * const baseWallet = createWallet("org.base.account", {
+ *   appMetadata: {
+ *     name: "My App",
+ *     url: "https://my-app.com",
+ *     description: "my app description",
+ *     logoUrl: "https://path/to/my-app/logo.svg",
+ *   },
+ *   chains: [base], // specify supported chains (use baseSepolia for testnet)
+ * });
+ *
+ * const account = await baseWallet.connect({
+ *  client,
+ * });
+ * ```
+ *
+ * [View Base Account wallet creation options](https://portal.thirdweb.com/references/typescript/v5/BaseAccountWalletCreationOptions)
+ *
  * ## Connecting with a smart wallet
  *
  * ```ts
@@ -180,6 +209,19 @@ export function createWallet<const ID extends WalletId>(
           return showCoinbasePopup(provider);
         },
         providerFactory: () => getCoinbaseWebProvider(options),
+      }) as Wallet<ID>;
+    }
+    /**
+     * BASE ACCOUNT SDK WALLET
+     * -> uses the new @base-org/account SDK for Base smart wallet integration
+     */
+    case id === BASE_ACCOUNT: {
+      const options = creationOptions as CreateWalletArgs<
+        typeof BASE_ACCOUNT
+      >[1];
+      return baseAccountWalletSDK({
+        createOptions: options,
+        providerFactory: () => getBaseAccountWebProvider(options),
       }) as Wallet<ID>;
     }
     /**
@@ -299,30 +341,111 @@ export function createWallet<const ID extends WalletId>(
               "./wallet-connect/controller.js"
             );
 
-            const [
-              connectedAccount,
-              connectedChain,
-              doDisconnect,
-              doSwitchChain,
-            ] = await connectWC(
-              wcOptions,
-              emitter,
-              wallet.id as WCSupportedWalletIds | "walletConnect",
-              webLocalStorage,
-              sessionHandler,
-            );
-            // set the states
-            account = connectedAccount;
-            chain = connectedChain;
-            handleDisconnect = doDisconnect;
-            handleSwitchChain = doSwitchChain;
-            trackConnect({
-              chainId: chain.id,
-              client: wcOptions.client,
-              walletAddress: account.address,
-              walletType: id,
-            });
-            return account;
+            let qrOverlay: QROverlay | undefined;
+
+            try {
+              const [
+                connectedAccount,
+                connectedChain,
+                doDisconnect,
+                doSwitchChain,
+              ] = await connectWC(
+                {
+                  ...wcOptions,
+                  walletConnect: {
+                    ...wcOptions.walletConnect,
+                    onDisplayUri:
+                      wcOptions.walletConnect?.onDisplayUri ||
+                      (async (uri) => {
+                        // Check if we're in a browser environment
+                        if (
+                          typeof window !== "undefined" &&
+                          typeof document !== "undefined"
+                        ) {
+                          // on mobile, open the wallet app via deeplink
+                          if (isMobile()) {
+                            const walletInfo = await getWalletInfo(id);
+
+                            const mobileAppLink =
+                              walletInfo.mobile.native ||
+                              walletInfo.mobile.universal;
+                            if (mobileAppLink) {
+                              openWindow(
+                                formatWalletConnectUrl(mobileAppLink, uri)
+                                  .redirect,
+                              );
+                            } else {
+                              // on android, wc:// links show the app picker
+                              openWindow(uri);
+                            }
+                            return;
+                          }
+                          // on desktop, create a QR overlay
+                          else {
+                            try {
+                              const { createQROverlay } = await import(
+                                "./wallet-connect/qr-overlay.js"
+                              );
+
+                              // Clean up any existing overlay
+                              if (qrOverlay) {
+                                qrOverlay.destroy();
+                              }
+
+                              // Create new QR overlay
+                              qrOverlay = createQROverlay(uri, {
+                                theme:
+                                  wcOptions.walletConnect?.qrModalOptions
+                                    ?.themeMode ?? "dark",
+                                qrSize: 280,
+                                showCloseButton: true,
+                                onCancel: () => {
+                                  wcOptions.walletConnect?.onCancel?.();
+                                },
+                              });
+                            } catch (error) {
+                              console.error(
+                                "Failed to create QR overlay:",
+                                error,
+                              );
+                            }
+                          }
+                        }
+                      }),
+                  },
+                },
+                emitter,
+                wallet.id as WCSupportedWalletIds | "walletConnect",
+                webLocalStorage,
+                sessionHandler,
+              );
+
+              // Clean up QR overlay on successful connection
+              if (qrOverlay) {
+                qrOverlay.destroy();
+                qrOverlay = undefined;
+              }
+
+              // set the states
+              account = connectedAccount;
+              chain = connectedChain;
+              handleDisconnect = doDisconnect;
+              handleSwitchChain = doSwitchChain;
+              trackConnect({
+                chainId: chain.id,
+                client: wcOptions.client,
+                walletAddress: account.address,
+                walletType: id,
+              });
+              return account;
+            } catch (error) {
+              // Clean up QR overlay on connection error
+              if (qrOverlay) {
+                qrOverlay.destroy();
+                qrOverlay = undefined;
+              }
+              throw error;
+            }
           }
 
           if (id === "walletConnect") {
@@ -400,6 +523,8 @@ export function createWallet<const ID extends WalletId>(
         id,
         subscribe: emitter.subscribe,
         switchChain: async (c) => {
+          // TODO: this should actually throw an error if the chain switch fails
+          // but our useSwitchActiveWalletChain hook currently doesn't handle this
           try {
             await handleSwitchChain(c);
             chain = c;
