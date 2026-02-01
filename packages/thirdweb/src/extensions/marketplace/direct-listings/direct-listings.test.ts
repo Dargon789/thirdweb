@@ -1,5 +1,4 @@
-import { AbiFunction } from "ox";
-import type { Abi } from "ox/Abi";
+import { type Abi, toFunctionSelector } from "viem";
 import { beforeAll, describe, expect, it } from "vitest";
 import { TEST_CONTRACT_URI } from "~test/ipfs-uris.js";
 import { ANVIL_CHAIN } from "../../../../test/src/chains.js";
