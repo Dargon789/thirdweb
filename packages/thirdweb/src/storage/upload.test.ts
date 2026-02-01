@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { TEST_CLIENT } from "~test/test-clients.js";
-import { detectPlatform } from "../utils/detect-platform.js";
+import * as detectPlatformModule from "../utils/detect-platform.js";
 import { upload } from "./upload.js";
 
 describe.runIf(process.env.TW_SECRET_KEY)("Storage:upload", () => {
