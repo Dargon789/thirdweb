@@ -588,7 +588,7 @@ describe.runIf(process.env.TW_SECRET_KEY)(
       );
     });
 
-    it("prepareCreateAuctionParams should throw error if start auction time is less than endtime", async () => {
+    it("prepareCreateAuctionParams should throw error if end time is before start time", async () => {
       await expect(() =>
         prepareCreateAuctionParams({
           contract: marketplaceContract,
